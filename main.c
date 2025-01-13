@@ -6,7 +6,7 @@
 #include "board.h"
 
 #define RES             ADC_RES_10BIT
-#define DELAY_MS        100U
+#define DELAY_US        62U //
 #define ADC_BITS 10
 #define GPIO_OUT_HIGHDRIVE GPIO_MODE(1, 1, 0, 3)
 
@@ -58,6 +58,8 @@ int gpio_init_out_highdrive(gpio_t pin)
     return 0;
 }
 
+static float ring_buffer[48000];
+
 int main(void)
 {
     int sample = 0;
@@ -85,18 +87,29 @@ int main(void)
             printf("Successfully initialized ADC_LINE(%u)\n", 3);
         }
 
-
+    unsigned int i = 0;
     while (1) {
-            const int BIAS_10_BITS = 100;
+            const int BIAS_10_BITS = 400;
             sample = adc_sample(ADC_LINE(3), RES) - BIAS_10_BITS;
             // float f_val = (sample * ADC_REF_V) / (1 << ADC_BITS);
-            if (sample < 0) {
-                printf("ADC_LINE(%u): selected resolution not applicable\n", 3);
-            } else {
-                printf("ADC_LINE(%u): %i\n", 3, sample);
+            printf("ADC_LINE(%u): %i\n", 3, sample);
                 // printf("adc volt: %f \n", f_val);
+
+            
+            // When the ring buffer is not full, add one values to the ring buffer
+            if(i < sizeof(ring_buffer) / sizeof(float)) {
+                //Normalize the sample
+                ring_buffer[i] = sample / 1024.0f;
+            } else { // if ring buffer is full, give it to the model
+                //Inference part
+                //fetch the output blablabla
+
+                //reset the ring buffer
+                i = 0;
             }
-        ztimer_sleep(ZTIMER_MSEC, DELAY_MS);
+            i++;
+
+        ztimer_sleep(ZTIMER_USEC, DELAY_US);
     }
 
     return 0;
