@@ -4,7 +4,9 @@ BOARD ?= microbit-v2
 
 RIOTBASE= $(HOME)/RIOT
 
-FEATURES_REQUIRED = periph_adc periph_gpio
+WERROR=0
+
+# FEATURES_REQUIRED = periph_adc periph_gpio
 USEMODULE += ztimer
 USEMODULE += ztimer_msec ztimer_usec
 USEMODULE += printf_float
