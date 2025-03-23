@@ -1,11 +1,12 @@
 #ifndef MIC_H
 #define MIC_H
 
-#ifndef BOARD_NATIVE
+#ifndef SIMULATE_ADC
 
 #include "periph/adc.h"
 #include "periph/gpio.h"
 #include "board.h"
+
 
 #define RES             ADC_RES_10BIT
 #define BIAS_10_BITS 400
@@ -60,12 +61,17 @@ int gpio_init_out_highdrive(gpio_t pin)
     port(pin)->PIN_CNF[pin_num(pin)] = GPIO_OUT_HIGHDRIVE;
     return 0;
 }
+
+#else
+
+#include "blob/resampled_audio.bin.h"
+
 #endif
 
 
 static inline int mic_init(void) {
 
-#ifndef BOARD_NATIVE
+#ifndef SIMULATE_ADC
     int result;
 
     result = gpio_init_out_highdrive(RUN_MIC_PIN);
@@ -92,11 +98,25 @@ static inline int mic_init(void) {
 }
 
 static inline int get_sample_value(void) {
-    
-#ifndef BOARD_NATIVE
+
+#ifndef SIMULATE_ADC
     return adc_sample(ADC_LINE(3), RES) - BIAS_10_BITS;
 #endif
     return 0;
 }
+
+static inline real_t get_amplitude(void) {
+#ifndef SIMULATE_ADC
+    return (adc_sample(ADC_LINE(3), RES) - BIAS_10_BITS) / 1024.0f;
+#else
+    static int i = 0;
+    real_t *input = (real_t*) &resampled_audio_bin;
+    real_t amplitude = input[i];
+    i++;
+    if (i > MODEL_INPUT_SIZE - 1)  i = 0;
+    return amplitude;
+#endif
+}
+
 
 #endif
