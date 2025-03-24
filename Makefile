@@ -19,10 +19,12 @@ CFLAGS += -DSIMULATE_ADC
 endif
 
 USEMODULE += ztimer
-USEMODULE += ztimer_msec ztimer_usec
+USEMODULE += ztimer_usec
+
 USEMODULE += printf_float
 BLOBS += resampled_audio.bin
 
 CFLAGS += -DADC_GAIN=SAADC_CH_CONFIG_GAIN_Gain4
+CFLAGS += -DTHREAD_STACKSIZE_DEFAULT=2048
 
 include $(RIOTBASE)/Makefile.include
