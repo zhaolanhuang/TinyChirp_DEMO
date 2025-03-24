@@ -113,7 +113,7 @@ static inline real_t get_amplitude(void) {
     real_t *input = (real_t*) &resampled_audio_bin;
     real_t amplitude = input[i];
     i++;
-    if (i > MODEL_INPUT_SIZE - 1)  i = 0;
+    if (i == MODEL_INPUT_SIZE)  i = 0;
     return amplitude;
 #endif
 }
