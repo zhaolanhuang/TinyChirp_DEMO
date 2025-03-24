@@ -51,36 +51,31 @@ static void *worker_cnn_time(void* arg) {
         if (m.type != RING_BUFFER_FULL)
             continue;
         size_t r_idx = m.content.value;
-        // If 16000 samples are written to buffer we give buffer to model as for partial convolution
-        // if (i == sizeof(ring_buffer) / sizeof(float)) {
-            // print_buffer_details(ring_buffer, sizeof(ring_buffer) / sizeof(float));
-            // i = 0;
-        printf("Inference Begin: j = %d, r_idx= %d\n", j, r_idx);
+
+        // printf("Inference Begin: j = %d, r_idx= %d\n", j, r_idx);
 
             // Model works with 3 sec audio but buffer has only 1 sec signal. So we use partial convolution - we aggregate output_tile
         CNN_model_inference((real_t*)ring_buffer[r_idx], output, conv1weight, channel_number1, kernelSize1, conv2weight, channel_number2, kernelSize2, tile_size, input_size, fc1weight, fc2weight,fc1bias,fc2bias, conv1bias, conv2bias, output_tile);
             // print_array_output_tile(output_tile, channel_number2);
 
         j++;
-        printf("Inference End of Conv: j = %d\n", j);
-        // }
+        // printf("Inference End of Conv: j = %d\n", j);
+
 
         // If output_tile has data from 3 seconds (3 buffers) do a prediction
         if (j == MODEL_INPUT_SIZE / RING_BUFFER_SIZE) {
-            printf("outputSize: %d \n", outputSize);
+            // printf("outputSize: %d \n", outputSize);
             for(int l = 0; l< channel_number2;l++){
                 output_tile[l] /= outputSize;
                 output_tile[l] += conv2bias[l];
             }
-            printf("MLP Begin\n");
+            // printf("MLP Begin\n");
             mlp(output_tile, output, channel_number2, 64, 2, fc1weight, fc2weight,fc1bias,fc2bias);
-            printf("MLP End\n");
+            // printf("MLP End\n");
             msg_t m_rslt;
             m_rslt.type = INFERENCE_RESULT;
             
             msg_send(&m_rslt, pid_main);
-            // printf("Inference output: \n");
-            // print_array(output,2);
 
             j = 0;
             for (int k = 0; k< channel_number2;k++){
@@ -115,7 +110,7 @@ static void *worker_audio_sampling(void* arg) {
                 m.content.value = ring_buffer_idx;
                 msg_send(&m, pid_cnn_time);
 
-                printf("i = %d \n", i);
+                // printf("i = %d \n", i);
 
                 ring_buffer_idx++;
                 if (ring_buffer_idx > RING_BUFFER_NUM - 1)
@@ -155,7 +150,7 @@ int main(void)
                             worker_cnn_time, NULL, "thread_cnn_time");
 
     pid_audio_sampling = thread_create(stacks[1], sizeof(stacks[1]),
-                            THREAD_PRIORITY_MAIN - 1,
+                            THREAD_PRIORITY_MAIN - 2,
                             THREAD_CREATE_WOUT_YIELD,
                             worker_audio_sampling, NULL, "thread_audio_sampling");
 
