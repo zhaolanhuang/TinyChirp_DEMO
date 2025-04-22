@@ -8,10 +8,12 @@
 #include "board.h"
 
 
-#define RES             ADC_RES_10BIT
-#define BIAS_10_BITS 400
+#define RES             ADC_RES_12BIT
+#define BIAS_10_BITS 102
+#define BIAS_VOLT 0.1f
+#define RESOLUTION_12BIT 4096.0f
 
-#define ADC_BITS 10
+#define ADC_BITS 12
 #define GPIO_OUT_HIGHDRIVE GPIO_MODE(1, 1, 0, 3)
 
 const float ADC_REF_V = 3.3 / 4;
@@ -75,6 +77,7 @@ static inline int mic_init(void) {
     int result;
 
     result = gpio_init_out_highdrive(RUN_MIC_PIN);
+    // result = gpio_init(RUN_MIC_PIN, GPIO_OUT);
 
     if (result == 0) {
         printf("Successfully initialized MIC GPIO!\n");
@@ -97,17 +100,19 @@ static inline int mic_init(void) {
     return 0;
 }
 
-static inline int get_sample_value(void) {
+static inline int16_t get_sample_value(void) {
 
 #ifndef SIMULATE_ADC
-    return adc_sample(ADC_LINE(3), RES) - BIAS_10_BITS;
+    return adc_sample(ADC_LINE(3), RES);
 #endif
     return 0;
 }
 
 static inline real_t get_amplitude(void) {
 #ifndef SIMULATE_ADC
-    return (adc_sample(ADC_LINE(3), RES) - BIAS_10_BITS) / 1024.0f;
+    // return ((adc_sample(ADC_LINE(3), RES)) * ADC_REF_V / 4.0f / RESOLUTION_12BIT - BIAS_VOLT) * 1000; // mV
+    return ((adc_sample(ADC_LINE(3), RES)) * ADC_REF_V / 4.0f / RESOLUTION_12BIT) * 1000; // mV
+    // return (adc_sample(ADC_LINE(3), RES)) * 0.08f;
 #else
     static int i = 0;
     real_t *input = (real_t*) &resampled_audio_bin;
