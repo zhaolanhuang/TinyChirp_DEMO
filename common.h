@@ -8,7 +8,7 @@ typedef float real_t;
 #define TILE_SIZE 128
 // #define INPUT_SIZE 16000
 #define MODEL_INPUT_SIZE 48000
-#define RING_BUFFER_SIZE 1600
+#define RING_BUFFER_SIZE 24000
 
 #define ACTUAL_TILE_SIZE (TILE_SIZE + KERNEL_SIZE1 -1)
 

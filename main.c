@@ -11,10 +11,15 @@
 #include "mic.h"
 
 #define SUB_THREAD_NUM 2
-#define RING_BUFFER_NUM 3
+#define RING_BUFFER_NUM 2
 static char stacks[SUB_THREAD_NUM][THREAD_STACKSIZE_DEFAULT];
 
+#ifdef OUTPUT_RAW_DATA
+static int16_t ring_buffer[RING_BUFFER_NUM][RING_BUFFER_SIZE];
+#else
 static real_t ring_buffer[RING_BUFFER_NUM][RING_BUFFER_SIZE];
+#endif
+
 static real_t output[2];
 
 static kernel_pid_t pid_cnn_time;
@@ -58,22 +63,28 @@ static void *worker_cnn_time(void* arg) {
         // printf("Inference Begin: j = %d, r_idx= %d\n", j, r_idx);
 
             // Model works with 3 sec audio but buffer has only 1 sec signal. So we use partial convolution - we aggregate output_tile
-        CNN_model_inference((real_t*)ring_buffer[r_idx], output, conv1weight, channel_number1, kernelSize1, conv2weight, channel_number2, kernelSize2, tile_size, input_size, fc1weight, fc2weight,fc1bias,fc2bias, conv1bias, conv2bias, output_tile);
+        // CNN_model_inference((real_t*)ring_buffer[r_idx], output, conv1weight, channel_number1, kernelSize1, conv2weight, channel_number2, kernelSize2, tile_size, input_size, fc1weight, fc2weight,fc1bias,fc2bias, conv1bias, conv2bias, output_tile);
             // print_array_output_tile(output_tile, channel_number2);
-
+        // print_array(ring_buffer[0], 10);
         j++;
         // printf("Inference End of Conv: j = %d\n", j);
+
+
+        for(int i = 0; i < RING_BUFFER_SIZE; i++) {
+            printf("%" PRIx16 " ", ring_buffer[r_idx][i]);
+        }
+        printf("\n");        
 
 
         // If output_tile has data from 3 seconds (3 buffers) do a prediction
         if (j == MODEL_INPUT_SIZE / RING_BUFFER_SIZE) {
             // printf("outputSize: %d \n", outputSize);
-            for(int l = 0; l< channel_number2;l++){
-                output_tile[l] /= outputSize;
-                output_tile[l] += conv2bias[l];
-            }
+            // for(int l = 0; l< channel_number2;l++){
+            //     output_tile[l] /= outputSize;
+            //     output_tile[l] += conv2bias[l];
+            // }
             // printf("MLP Begin\n");
-            mlp(output_tile, output, channel_number2, 64, 2, fc1weight, fc2weight,fc1bias,fc2bias);
+            // mlp(output_tile, output, channel_number2, 64, 2, fc1weight, fc2weight,fc1bias,fc2bias);
 
             time_to_result = ztimer_now(ZTIMER_USEC) - time_last_rslt;
             time_last_rslt = ztimer_now(ZTIMER_USEC);
@@ -84,9 +95,9 @@ static void *worker_cnn_time(void* arg) {
             msg_send(&m_rslt, pid_main);
 
             j = 0;
-            for (int k = 0; k< channel_number2;k++){
-                output_tile[k] = 0.0f;
-            }
+            // for (int k = 0; k< channel_number2;k++){
+            //     output_tile[k] = 0.0f;
+            // }
 
         }
     }
@@ -107,11 +118,64 @@ static void *worker_audio_sampling(void* arg) {
             // printf("adc volt: %f \n", f_val);
 
             //Normalize the sample
-            ring_buffer[ring_buffer_idx][i] = get_amplitude();
+            float f_val = get_amplitude();
+            ring_buffer[ring_buffer_idx][i] = f_val;
             i++;
+
+            // if (f_val > 85.0)
+            //     printf("%.6f \n", f_val);
+
             // When the ring buffer is not full, add one values to the ring buffer
 
             if(i < sizeof(ring_buffer[0]) / (sizeof(float))) {
+                ;
+            } else { // if ring buffer is full, give it to the model
+                m.type = RING_BUFFER_FULL;
+                m.content.value = ring_buffer_idx;
+                msg_send(&m, pid_cnn_time);
+                // printf("ring_buffer_idx = %d \n", ring_buffer_idx);
+                // printf("i = %d \n", i);
+
+                ring_buffer_idx++;
+                if (ring_buffer_idx > RING_BUFFER_NUM - 1)
+                    ring_buffer_idx = 0;
+
+                //reset the ring buffer
+                i = 0;
+            }
+            
+
+        // ztimer_sleep(ZTIMER_USEC, DELAY_US);
+        ztimer_periodic_wakeup(ZTIMER_USEC, &last_wakeup, DELAY_US);
+    }
+
+
+    return NULL;
+}
+
+static void *worker_audio_raw_sampling(void* arg) {
+    (void) arg;
+    unsigned int i = 0;
+    unsigned int ring_buffer_idx = 0;
+    uint32_t last_wakeup = ztimer_now(ZTIMER_USEC);
+    while (1) {
+            msg_t m;
+                        
+            // int sample = get_sample_value();
+            // float f_val = (sample * ADC_REF_V) / (1 << ADC_BITS);
+            // printf("adc volt: %f \n", f_val);
+
+            //Normalize the sample
+            int16_t f_val = get_sample_value();
+            ring_buffer[ring_buffer_idx][i] = f_val;
+            i++;
+
+            // if (f_val > 85.0)
+            //     printf("%.6f \n", f_val);
+
+            // When the ring buffer is not full, add one values to the ring buffer
+
+            if(i < sizeof(ring_buffer[0]) / (sizeof(int16_t))) {
                 ;
             } else { // if ring buffer is full, give it to the model
                 m.type = RING_BUFFER_FULL;
@@ -161,7 +225,7 @@ int main(void)
     pid_audio_sampling = thread_create(stacks[1], sizeof(stacks[1]),
                             THREAD_PRIORITY_MAIN - 2,
                             THREAD_CREATE_WOUT_YIELD,
-                            worker_audio_sampling, NULL, "thread_audio_sampling");
+                            worker_audio_raw_sampling, NULL, "thread_audio_sampling");
 
     while (1)
     {
@@ -169,9 +233,10 @@ int main(void)
         msg_receive(&m);
         if (m.type != INFERENCE_RESULT)
             continue;
-        printf("Inference output: \n");
-        print_array(output,2);
+        // printf("Inference output: \n");
+        // print_array(output,2);
         printf("time to result: %d \n", time_to_result);
+        
 
 
     }
