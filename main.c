@@ -9,6 +9,7 @@
 #include "cnn_time_parameter.h"
 #include "utils.h"
 #include "mic.h"
+#include "adc_dma.h"
 
 #define SUB_THREAD_NUM 2
 #define RING_BUFFER_NUM 2
@@ -19,6 +20,8 @@ static int16_t ring_buffer[RING_BUFFER_NUM][RING_BUFFER_SIZE];
 #else
 static real_t ring_buffer[RING_BUFFER_NUM][RING_BUFFER_SIZE];
 #endif
+
+static void* ring_buffer_ptrs[RING_BUFFER_NUM];
 
 static real_t output[2];
 
@@ -70,10 +73,12 @@ static void *worker_cnn_time(void* arg) {
         // printf("Inference End of Conv: j = %d\n", j);
 
 
-        for(int i = 0; i < RING_BUFFER_SIZE; i++) {
-            printf("%" PRIx16 " ", ring_buffer[r_idx][i]);
-        }
-        printf("\n");        
+        // for(int i = 0; i < RING_BUFFER_SIZE; i++) {
+        //     printf("%" PRIx16 " ", ring_buffer[r_idx][i]);
+        // }
+        // printf("\n");        
+
+        fwrite(ring_buffer[r_idx], sizeof ring_buffer[r_idx][0], RING_BUFFER_SIZE, stdout);
 
 
         // If output_tile has data from 3 seconds (3 buffers) do a prediction
@@ -206,6 +211,12 @@ int main(void)
     // puts("This test will sample all available ADC lines once every 100ms with\n"
     //      "a 10-bit resolution and print the sampled results to STDIO\n\n");
 
+    for(int i = 0; i < RING_BUFFER_NUM; i++) {
+        ring_buffer_ptrs[i] = ring_buffer[i];
+    }
+
+    set_dma_buffer(&ring_buffer_ptrs, RING_BUFFER_NUM, RING_BUFFER_SIZE);
+
     if (mic_init() < 0)
     {
         printf("Init of MIC Failed! \n");
@@ -222,10 +233,13 @@ int main(void)
                             THREAD_CREATE_WOUT_YIELD,
                             worker_cnn_time, NULL, "thread_cnn_time");
 
-    pid_audio_sampling = thread_create(stacks[1], sizeof(stacks[1]),
-                            THREAD_PRIORITY_MAIN - 2,
-                            THREAD_CREATE_WOUT_YIELD,
-                            worker_audio_raw_sampling, NULL, "thread_audio_sampling");
+    set_sampling_end_notifyee_pid(pid_cnn_time);
+    start_continuous_sample();
+
+    // pid_audio_sampling = thread_create(stacks[1], sizeof(stacks[1]),
+    //                         THREAD_PRIORITY_MAIN - 2,
+    //                         THREAD_CREATE_WOUT_YIELD,
+    //                         worker_audio_raw_sampling, NULL, "thread_audio_sampling");
 
     while (1)
     {
@@ -235,7 +249,7 @@ int main(void)
             continue;
         // printf("Inference output: \n");
         // print_array(output,2);
-        printf("time to result: %d \n", time_to_result);
+        // printf("time to result: %d \n", time_to_result);
         
 
 

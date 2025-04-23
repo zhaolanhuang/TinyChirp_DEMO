@@ -8,11 +8,12 @@ typedef float real_t;
 #define TILE_SIZE 128
 // #define INPUT_SIZE 16000
 #define MODEL_INPUT_SIZE 48000
-#define RING_BUFFER_SIZE 24000
+#define RING_BUFFER_SIZE 1600
 
 #define ACTUAL_TILE_SIZE (TILE_SIZE + KERNEL_SIZE1 -1)
 
-#define DELAY_US        62U //
+#define SAMPLE_RATE 16000 //16 kHz
+#define DELAY_US        62U // 1/SAMPLERATE
 
 
 enum msg_type{
