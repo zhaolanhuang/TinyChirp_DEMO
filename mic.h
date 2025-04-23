@@ -6,7 +6,7 @@
 #include "periph/adc.h"
 #include "periph/gpio.h"
 #include "board.h"
-
+#include "adc_dma.h"
 
 #define RES             ADC_RES_12BIT
 #define BIAS_10_BITS 102
@@ -89,7 +89,7 @@ static inline int mic_init(void) {
     gpio_set(RUN_MIC_PIN);
 
     /* initialize all available ADC lines */
-    if (adc_init(ADC_LINE(3)) < 0) {
+    if (adc_dma_init(ADC_LINE(3)) < 0) {
             printf("Initialization of ADC_LINE(%u) failed\n", 3);
             return -1;
         } else {
@@ -98,6 +98,10 @@ static inline int mic_init(void) {
 
 #endif
     return 0;
+}
+
+static inline void start_continuous_sample() {
+    adc_start_continuous_sample(ADC_LINE(3), RES, SAMPLE_RATE);
 }
 
 static inline int16_t get_sample_value(void) {
@@ -111,8 +115,8 @@ static inline int16_t get_sample_value(void) {
 static inline real_t get_amplitude(void) {
 #ifndef SIMULATE_ADC
     // return ((adc_sample(ADC_LINE(3), RES)) * ADC_REF_V / 4.0f / RESOLUTION_12BIT - BIAS_VOLT) * 1000; // mV
-    return ((adc_sample(ADC_LINE(3), RES)) * ADC_REF_V / 4.0f / RESOLUTION_12BIT) * 1000; // mV
-    // return (adc_sample(ADC_LINE(3), RES)) * 0.08f;
+    // return ((adc_sample(ADC_LINE(3), RES)) * ADC_REF_V / 4.0f / RESOLUTION_12BIT) * 1000; // mV
+    return ((adc_sample(ADC_LINE(3), RES)) / 4096.0 - 0.39) * 2.5; // Empircal fomular deduced from measurement..
 #else
     static int i = 0;
     real_t *input = (real_t*) &resampled_audio_bin;
