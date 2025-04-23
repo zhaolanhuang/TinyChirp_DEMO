@@ -17,6 +17,8 @@ static char stacks[SUB_THREAD_NUM][THREAD_STACKSIZE_DEFAULT];
 
 static real_t ring_buffer[RING_BUFFER_NUM][RING_BUFFER_SIZE];
 
+static int16_t ring_dma_buffer[RING_BUFFER_NUM][RING_BUFFER_SIZE];
+
 static void* ring_buffer_ptrs[RING_BUFFER_NUM];
 
 static real_t output[2];
@@ -60,6 +62,10 @@ static void *worker_cnn_time(void* arg) {
         size_t r_idx = m.content.value;
 
         // printf("Inference Begin: j = %d, r_idx= %d\n", j, r_idx);
+
+        for (int i = 0; i < RING_BUFFER_SIZE; i++) {
+            ring_buffer[r_idx][i] = (ring_dma_buffer[r_idx][i] / 4096.0 - 0.39) * 2.5;
+        }
 
             // Model works with 3 sec audio but buffer has only 1 sec signal. So we use partial convolution - we aggregate output_tile
         CNN_model_inference((real_t*)ring_buffer[r_idx], output, conv1weight, channel_number1, kernelSize1, conv2weight, channel_number2, kernelSize2, tile_size, input_size, fc1weight, fc2weight,fc1bias,fc2bias, conv1bias, conv2bias, output_tile);
@@ -147,7 +153,7 @@ int main(void)
     //      "a 10-bit resolution and print the sampled results to STDIO\n\n");
 
     for(int i = 0; i < RING_BUFFER_NUM; i++) {
-        ring_buffer_ptrs[i] = ring_buffer[i];
+        ring_buffer_ptrs[i] = ring_dma_buffer[i];
     }
 
     set_dma_buffer(&ring_buffer_ptrs, RING_BUFFER_NUM, RING_BUFFER_SIZE);

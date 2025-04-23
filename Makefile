@@ -6,7 +6,7 @@ RIOTBASE= $(HOME)/RIOT
 
 WERROR=0
 
-SIMULATE_ADC=1
+SIMULATE_ADC=0
 
 ifneq ($(BOARD), native)
 FEATURES_REQUIRED = periph_adc periph_gpio
