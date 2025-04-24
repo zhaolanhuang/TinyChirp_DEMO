@@ -62,11 +62,11 @@ static void *worker_cnn_time(void* arg) {
         size_t r_idx = m.content.value;
 
         // printf("Inference Begin: j = %d, r_idx= %d\n", j, r_idx);
-
+#ifndef SIMULATE_ADC
         for (int i = 0; i < RING_BUFFER_SIZE; i++) {
             ring_buffer[r_idx][i] = (ring_dma_buffer[r_idx][i] / 4096.0 - 0.39) * 2.5;
         }
-
+#endif
             // Model works with 3 sec audio but buffer has only 1 sec signal. So we use partial convolution - we aggregate output_tile
         CNN_model_inference((real_t*)ring_buffer[r_idx], output, conv1weight, channel_number1, kernelSize1, conv2weight, channel_number2, kernelSize2, tile_size, input_size, fc1weight, fc2weight,fc1bias,fc2bias, conv1bias, conv2bias, output_tile);
             // print_array_output_tile(output_tile, channel_number2);
@@ -152,11 +152,14 @@ int main(void)
     // puts("This test will sample all available ADC lines once every 100ms with\n"
     //      "a 10-bit resolution and print the sampled results to STDIO\n\n");
 
+#ifndef SIMULATE_ADC
     for(int i = 0; i < RING_BUFFER_NUM; i++) {
         ring_buffer_ptrs[i] = ring_dma_buffer[i];
     }
 
     set_dma_buffer(&ring_buffer_ptrs, RING_BUFFER_NUM, RING_BUFFER_SIZE);
+
+#endif
 
     if (mic_init() < 0)
     {
@@ -174,14 +177,15 @@ int main(void)
                             THREAD_CREATE_WOUT_YIELD,
                             worker_cnn_time, NULL, "thread_cnn_time");
 
+#ifndef SIMULATE_ADC
     set_sampling_end_notifyee_pid(pid_cnn_time);
     start_continuous_sample();
-
-    // pid_audio_sampling = thread_create(stacks[1], sizeof(stacks[1]),
-    //                         THREAD_PRIORITY_MAIN - 2,
-    //                         THREAD_CREATE_WOUT_YIELD,
-    //                         worker_audio_raw_sampling, NULL, "thread_audio_sampling");
-
+#else
+    pid_audio_sampling = thread_create(stacks[1], sizeof(stacks[1]),
+                            THREAD_PRIORITY_MAIN - 2,
+                            THREAD_CREATE_WOUT_YIELD,
+                            worker_audio_sampling, NULL, "thread_audio_sampling");
+#endif
     while (1)
     {
         msg_t m;
@@ -190,6 +194,9 @@ int main(void)
             continue;
         printf("Inference output: \n");
         print_array(output,2);
+        if (output[0] > output[1]) { //0 -> target, 1 -> non-target
+            printf("Corn buntting sound detected! \n");
+        }
         printf("time to result: %d \n", time_to_result);
 
 

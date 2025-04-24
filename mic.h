@@ -86,6 +86,8 @@ static inline int mic_init(void) {
         printf("Initialization of MIC GPIO Failed!\n");
         return -1;
     }
+    // gpio_clear(RUN_MIC_PIN);
+
     gpio_set(RUN_MIC_PIN);
 
     /* initialize all available ADC lines */
@@ -100,9 +102,13 @@ static inline int mic_init(void) {
     return 0;
 }
 
+#ifndef SIMULATE_ADC
+
 static inline void start_continuous_sample() {
     adc_start_continuous_sample(ADC_LINE(3), RES, SAMPLE_RATE);
 }
+
+#endif
 
 static inline int16_t get_sample_value(void) {
 
