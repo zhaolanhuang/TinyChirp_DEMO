@@ -51,6 +51,15 @@ static void *worker_cnn_time(void* arg) {
         output_tile[k] = 0.0f;
     }
 
+    unsigned int ckpt_idx = 0;
+    real_t output_tile_ckpt[CHECKPOINT_NUM][channel_number2];
+    for (int i = 0; i < CHECKPOINT_NUM; i++) {
+        for (int k = 0; k< channel_number2;k++){
+            output_tile_ckpt[i][k] = 0.0f;
+        }
+    }
+
+
     while (1)
     {
 
@@ -68,7 +77,8 @@ static void *worker_cnn_time(void* arg) {
         }
 #endif
             // Model works with 3 sec audio but buffer has only 1 sec signal. So we use partial convolution - we aggregate output_tile
-        CNN_model_inference((real_t*)ring_buffer[r_idx], output, conv1weight, channel_number1, kernelSize1, conv2weight, channel_number2, kernelSize2, tile_size, input_size, fc1weight, fc2weight,fc1bias,fc2bias, conv1bias, conv2bias, output_tile);
+        CNN_model_inference((real_t*)ring_buffer[r_idx], output, conv1weight, channel_number1, kernelSize1, conv2weight, channel_number2, kernelSize2, 
+                            tile_size, input_size, fc1weight, fc2weight,fc1bias,fc2bias, conv1bias, conv2bias, output_tile_ckpt[ckpt_idx]);
             // print_array_output_tile(output_tile, channel_number2);
 
         j++;
@@ -76,8 +86,15 @@ static void *worker_cnn_time(void* arg) {
 
 
         // If output_tile has data from 3 seconds (3 buffers) do a prediction
-        if (j == MODEL_INPUT_SIZE / RING_BUFFER_SIZE) {
+        if (j == SLIDING_WINDOW_STEP / RING_BUFFER_SIZE) {
             // printf("outputSize: %d \n", outputSize);
+            
+            for (int i = 0; i < CHECKPOINT_NUM; i++) {
+                for (int k = 0; k< channel_number2;k++){
+                    output_tile[k] += output_tile_ckpt[i][k];
+                }
+            }
+
             for(int l = 0; l< channel_number2;l++){
                 output_tile[l] /= outputSize;
                 output_tile[l] += conv2bias[l];
@@ -94,6 +111,16 @@ static void *worker_cnn_time(void* arg) {
             msg_send(&m_rslt, pid_main);
 
             j = 0;
+
+            ckpt_idx++;
+            if (ckpt_idx >= CHECKPOINT_NUM ) {
+                ckpt_idx = 0;
+            }
+
+            for (int k = 0; k< channel_number2;k++){
+               output_tile_ckpt[ckpt_idx][k] = 0.0f;
+            }
+
             for (int k = 0; k< channel_number2;k++){
                 output_tile[k] = 0.0f;
             }
@@ -194,9 +221,14 @@ int main(void)
             continue;
         printf("Inference output: \n");
         print_array(output,2);
-        if (output[0] > output[1]) { //0 -> target, 1 -> non-target
+        // if (output[0] > output[1]) { //0 -> target, 1 -> non-target
+        //     printf("Corn buntting sound detected! \n");
+        // }
+
+        if (output[0] > -1.0) {
             printf("Corn buntting sound detected! \n");
         }
+
         printf("time to result: %d \n", time_to_result);
 
 
