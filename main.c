@@ -47,17 +47,19 @@ static void *worker_cnn_time(void* arg) {
     unsigned int j = 0;
 
     real_t output_tile[channel_number2];
-    for (int k = 0; k< channel_number2;k++){
-        output_tile[k] = 0.0f;
-    }
+    memset(output_tile, 0, sizeof(output_tile));
+    // for (int k = 0; k< channel_number2;k++){
+    //     output_tile[k] = 0.0f;
+    // }
 
     unsigned int ckpt_idx = 0;
     real_t output_tile_ckpt[CHECKPOINT_NUM][channel_number2];
-    for (int i = 0; i < CHECKPOINT_NUM; i++) {
-        for (int k = 0; k< channel_number2;k++){
-            output_tile_ckpt[i][k] = 0.0f;
-        }
-    }
+    memset(output_tile_ckpt, 0, sizeof(output_tile_ckpt));
+    // for (int i = 0; i < CHECKPOINT_NUM; i++) {
+    //     for (int k = 0; k< channel_number2;k++){
+    //         output_tile_ckpt[i][k] = 0.0f;
+    //     }
+    // }
 
 
     while (1)
@@ -145,6 +147,7 @@ static void *worker_audio_sampling(void* arg) {
 
             //Normalize the sample
             ring_buffer[ring_buffer_idx][i] = get_amplitude();
+            // ring_buffer[ring_buffer_idx][i] = 0;
             i++;
             // When the ring buffer is not full, add one values to the ring buffer
 
@@ -178,7 +181,8 @@ int main(void)
 {
     // puts("This test will sample all available ADC lines once every 100ms with\n"
     //      "a 10-bit resolution and print the sampled results to STDIO\n\n");
-
+    memset(ring_buffer, 0, sizeof(ring_buffer));
+    memset(output, 0, sizeof(output));
 #ifndef SIMULATE_ADC
     for(int i = 0; i < RING_BUFFER_NUM; i++) {
         ring_buffer_ptrs[i] = ring_dma_buffer[i];
