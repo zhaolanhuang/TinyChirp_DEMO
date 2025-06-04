@@ -16,17 +16,20 @@ endif
 
 ifeq ($(SIMULATE_ADC), 1)
 CFLAGS += -DSIMULATE_ADC
+BLOBS += resampled_audio.bin
 endif
 
 USEMODULE += ztimer
 USEMODULE += ztimer_usec
 
 USEMODULE += printf_float
-BLOBS += resampled_audio.bin
+
 
 CFLAGS += -DADC_GAIN=SAADC_CH_CONFIG_GAIN_Gain4
 # CFLAGS += -DADC_TACQ=SAADC_CH_CONFIG_TACQ_3us
 CFLAGS += -DADC_REF=SAADC_CH_CONFIG_REFSEL_VDD1_4
 CFLAGS += -DTHREAD_STACKSIZE_DEFAULT=2048
+
+INCLUDES += -I$(CURDIR)/include
 
 include $(RIOTBASE)/Makefile.include

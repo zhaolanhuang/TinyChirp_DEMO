@@ -11,6 +11,74 @@
 #include "mic.h"
 #include "adc_dma.h"
 
+#include "sos_filter.h"
+#include "resample.h"
+#include "min_max_scaler.h"
+#include "signal_energy.h"
+
+// #define NUM_OF_SOS 5
+// const sos_coeff_t highpass_coeff[NUM_OF_SOS][6] = {
+//     {1.55854712e-07, -3.11709423e-07, 1.55854712e-07,
+//      1.00000000e+00, 6.68178638e-01, 0.00000000e+00},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, 1.35904130e+00, 4.71015698e-01},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, 1.42887946e+00, 5.46607979e-01},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, 1.55098998e+00, 6.78779458e-01},
+//     {1.00000000e+00, -1.00000000e+00, 0.00000000e+00,
+//      1.00000000e+00, 1.73262236e+00, 8.75376926e-01},
+// }; // butterworth hp 9 order, cutoff 7000 Hz
+
+#define NUM_OF_SOS 5
+const sos_coeff_t highpass_coeff[NUM_OF_SOS][6] =
+{{ 0.31971562,-0.31971562,0.0,1.0,-0.66817864,0.0},
+ { 1.0,-2.0,1.0,1.0,-1.3590413,0.4710157 },
+ { 1.0,-2.0,1.0,1.0,-1.42887946,0.54660798},
+ { 1.0,-2.0,1.0,1.0,-1.55098998,0.67877946},
+ { 1.0,-2.0,1.0,1.0,-1.73262236,0.87537693},
+}; //// butterworth hp 9 order, cutoff 1000 Hz
+
+#define NUM_OF_LP_SOS 5
+const sos_coeff_t lowpass_coeff[NUM_OF_LP_SOS][6] = {
+    { 6.71705220e-04,1.34341044e-03,6.71705220e-04,1.00000000e+00
+    ,-1.98912367e-01,0.00000000e+00},
+     { 1.00000000e+00,2.00000000e+00,1.00000000e+00,1.00000000e+00
+    ,-4.09689602e-01,7.05705211e-02},
+     { 1.00000000e+00,2.00000000e+00,1.00000000e+00,1.00000000e+00
+    ,-4.48177181e-01,1.71143414e-01},
+     { 1.00000000e+00,2.00000000e+00,1.00000000e+00,1.00000000e+00
+    ,-5.23528317e-01,3.68045419e-01},
+     { 1.00000000e+00,1.00000000e+00,0.00000000e+00,1.00000000e+00
+    ,-6.59554533e-01,7.23499052e-01}
+}; //butter lp 9 order, cutoff 3000
+
+// #define NUM_OF_SOS 9
+// const sos_coeff_t highpass_coeff[NUM_OF_SOS][6] = {
+//     {3.48262720e-05, -6.96525440e-05, 3.48262720e-05,
+//      1.00000000e+00, -2.67560228e-02, 2.08456815e-03},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, -2.71679039e-02, 1.75106169e-02},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, -2.80173964e-02, 4.93263821e-02},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, -2.93594494e-02, 9.95898520e-02},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, -3.12860424e-02, 1.71745912e-01},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, -3.39403078e-02, 2.71155244e-01},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, -3.75409102e-02, 4.06007429e-01},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, -4.24244000e-02, 5.88907176e-01},
+//     {1.00000000e+00, -2.00000000e+00, 1.00000000e+00,
+//      1.00000000e+00, -4.91210710e-02, 8.39715402e-01}
+//     };
+
+// Initialize the SOS filters
+static SOS sos_filters[NUM_OF_SOS];
+static SOS lp_sos_filters[NUM_OF_LP_SOS];
+
 #define SUB_THREAD_NUM 2
 #define RING_BUFFER_NUM 3
 static char stacks[SUB_THREAD_NUM][THREAD_STACKSIZE_DEFAULT];
@@ -30,6 +98,19 @@ static kernel_pid_t pid_main;
 static uint32_t time_to_result = 0;
 static uint32_t time_last_rslt = 0;
 
+static real_t sum_energy = 0;
+static real_t hp_energy = 0;
+static real_t lp_energy = 0;
+
+static real_t lp_filter_output[RING_BUFFER_SIZE];
+static real_t filter_output[RING_BUFFER_SIZE];
+static real_t output_tile[CHANNEL_NUM2];
+static real_t output_tile_ckpt[CHECKPOINT_NUM][CHANNEL_NUM2];
+static real_t lp_energy_ckpt[CHECKPOINT_NUM];
+static real_t hp_energy_ckpt[CHECKPOINT_NUM];
+static real_t energy_ckpt[CHECKPOINT_NUM];
+
+
 static void *worker_cnn_time(void* arg) {
 
     int channel_number1 = CHANNEL_NUM1;
@@ -46,21 +127,30 @@ static void *worker_cnn_time(void* arg) {
     // unsigned int i = 0;
     unsigned int j = 0;
 
-    real_t output_tile[channel_number2];
     memset(output_tile, 0, sizeof(output_tile));
-    // for (int k = 0; k< channel_number2;k++){
-    //     output_tile[k] = 0.0f;
-    // }
 
     unsigned int ckpt_idx = 0;
-    real_t output_tile_ckpt[CHECKPOINT_NUM][channel_number2];
     memset(output_tile_ckpt, 0, sizeof(output_tile_ckpt));
-    // for (int i = 0; i < CHECKPOINT_NUM; i++) {
-    //     for (int k = 0; k< channel_number2;k++){
-    //         output_tile_ckpt[i][k] = 0.0f;
-    //     }
-    // }
 
+    memset(filter_output, 0, sizeof(filter_output));
+
+    memset(hp_energy_ckpt, 0, sizeof(hp_energy_ckpt));
+    memset(lp_energy_ckpt, 0, sizeof(lp_energy_ckpt));
+
+    memset(energy_ckpt, 0, sizeof(energy_ckpt));
+
+    for (int i = 0; i < NUM_OF_SOS; i++)
+    {
+        init_sos(&sos_filters[i], &highpass_coeff[i][0], &highpass_coeff[i][3]);
+    }
+
+    for (int i = 0; i < NUM_OF_LP_SOS; i++)
+    {
+        init_sos(&lp_sos_filters[i], &lowpass_coeff[i][0], &lowpass_coeff[i][3]);
+    }
+
+    // min_max_scaler_t scaler;
+    // init_min_max_scaler(&scaler);
 
     while (1)
     {
@@ -78,11 +168,20 @@ static void *worker_cnn_time(void* arg) {
             ring_buffer[r_idx][i] = (ring_dma_buffer[r_idx][i] / 4096.0 - 0.39) * 2.5;
         }
 #endif
+        apply_cascaded_sos(sos_filters, NUM_OF_SOS, ring_buffer[r_idx], filter_output, RING_BUFFER_SIZE);
             // Model works with 3 sec audio but buffer has only 1 sec signal. So we use partial convolution - we aggregate output_tile
-        CNN_model_inference((real_t*)ring_buffer[r_idx], output, conv1weight, channel_number1, kernelSize1, conv2weight, channel_number2, kernelSize2, 
+        CNN_model_inference((real_t*)filter_output, output, conv1weight, channel_number1, kernelSize1, conv2weight, channel_number2, kernelSize2, 
                             tile_size, input_size, fc1weight, fc2weight,fc1bias,fc2bias, conv1bias, conv2bias, output_tile_ckpt[ckpt_idx]);
             // print_array_output_tile(output_tile, channel_number2);
+        // init_min_max_scaler(&scaler);
+        apply_cascaded_sos(lp_sos_filters, NUM_OF_LP_SOS, ring_buffer[r_idx], lp_filter_output, RING_BUFFER_SIZE);
+        
 
+        // find_min_max(filter_output, RING_BUFFER_SIZE, &scaler);
+        // apply_min_max_scaler(filter_output, RING_BUFFER_SIZE, filter_output, &scaler);
+        lp_energy_ckpt[ckpt_idx] += calculate_energy(lp_filter_output, RING_BUFFER_SIZE);
+        hp_energy_ckpt[ckpt_idx] += calculate_energy(filter_output, RING_BUFFER_SIZE);
+        energy_ckpt[ckpt_idx] += calculate_energy(ring_buffer[r_idx], RING_BUFFER_SIZE);
         j++;
         // printf("Inference End of Conv: j = %d\n", j);
 
@@ -91,11 +190,19 @@ static void *worker_cnn_time(void* arg) {
         if (j == SLIDING_WINDOW_STEP / RING_BUFFER_SIZE) {
             // printf("outputSize: %d \n", outputSize);
             
+            sum_energy = 0;
+            hp_energy = 0;
+            lp_energy = 0;
             for (int i = 0; i < CHECKPOINT_NUM; i++) {
                 for (int k = 0; k< channel_number2;k++){
                     output_tile[k] += output_tile_ckpt[i][k];
                 }
+                sum_energy += energy_ckpt[i];
+                hp_energy += hp_energy_ckpt[i];
+                lp_energy += lp_energy_ckpt[i];
             }
+
+
 
             for(int l = 0; l< channel_number2;l++){
                 output_tile[l] /= outputSize;
@@ -126,6 +233,10 @@ static void *worker_cnn_time(void* arg) {
             for (int k = 0; k< channel_number2;k++){
                 output_tile[k] = 0.0f;
             }
+
+        hp_energy_ckpt[ckpt_idx] = 0;
+        energy_ckpt[ckpt_idx] = 0;
+        lp_energy_ckpt[ckpt_idx] = 0;
 
         }
     }
@@ -223,8 +334,11 @@ int main(void)
         msg_receive(&m);
         if (m.type != INFERENCE_RESULT)
             continue;
-        printf("Inference output: \n");
+        printf("Inference output: ");
         print_array(output,2);
+        printf("Sum Energy: %.6f \t HP Energy: %.6f \t LP Energy: %.6f \n", sum_energy, hp_energy, lp_energy);
+        printf("HP/S: %.6f \t LP/S: %.6f \t HP/LP: %.6f \n", hp_energy/sum_energy, lp_energy/sum_energy, hp_energy/lp_energy);
+        
         // if (output[0] > output[1]) { //0 -> target, 1 -> non-target
         //     printf("Corn buntting sound detected! \n");
         // }
